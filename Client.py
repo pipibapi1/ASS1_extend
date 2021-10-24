@@ -28,6 +28,7 @@ class Client:
 	PAUSE = 2
 	TEARDOWN = 3
 	PROCESS = 4
+	DESCRIBE = 5
 
 	RTSP_VER = "RTSP/1.0"
 	TRANSPORT = "RTP/UDP"
@@ -48,6 +49,10 @@ class Client:
 		self.frameNbr = 0
 		#
 		self.totalFrame = 0
+
+		self.totalReceivedFrame = 0
+		self.numLostFrame = 0
+		self.totalReceivedData = 0
 		self.setupMovie()
 
 	# Initiation
@@ -84,6 +89,7 @@ class Client:
 
 		self.total = Label(self.master, height=2)
 		self.total.grid(row=2, column=4, padx=2, pady=2)
+		self.total.configure(text=str(datetime.timedelta(seconds=0)))
 
 		self.currFrame = Label(self.master, height=2)
 		self.currFrame.grid(row=2, column=0, padx=2, pady=2)
@@ -96,6 +102,12 @@ class Client:
 		self.syncTime["text"]= "Sync"
 		self.syncTime["command"] = self.sync
 		self.syncTime.grid(row=2, column=3, padx=2, pady=2)
+
+		#Create describe button
+		self.describe = Button(self.master, width=20, padx=3, pady=3)
+		self.describe["text"] = "Describe"
+		self.describe["command"] =  self.describeVideo
+		self.describe.grid(row=1, column=0, padx=2, pady=2)
 
 #PART1#
 #########################################################################################################################################
@@ -138,10 +150,16 @@ class Client:
 		if abs(nextFrame - self.frameNbr)>=minDiff and self.state == self.READY:
 			self.sendRtspRequest(self.PROCESS, nextFrame)
 			self.state = self.PROCESSING
+			self.totalReceivedFrame += (self.frameNbr - nextFrame)
+			self.frameNbr = nextFrame
 
 	def sync(self):
 		value = self.scale.get()
 		self.moveToFrame(value)
+
+	def describeVideo(self):
+		self.sendRtspRequest(self.DESCRIBE)
+
    #PART 2
 	#########################################################################################################################################
 
@@ -159,8 +177,10 @@ class Client:
 					currFrameNbr = rtpPacket.seqNum()
 					print ("CURRENT SEQUENCE NUM: " + str(currFrameNbr))
 										
-					if not currFrameNbr == self.frameNbr: # Discard the late packet
+					if currFrameNbr > self.frameNbr: # Discard the late packet
+						self.numLostFrame += (currFrameNbr - self.frameNbr - 1)
 						self.frameNbr = currFrameNbr
+						self.totalReceivedData += len(rtpPacket.getPayload())
 						self.updateMovie(self.writeFrame(rtpPacket.getPayload()))
 			except:
 				# Stop listening upon requesting PAUSE or TEARDOWN
@@ -274,6 +294,12 @@ class Client:
 			request+="\nFrameNum: %d" %  value
 
 			self.requestSent = self.PROCESS
+		
+		elif requestCode == self.DESCRIBE and self.state == self.READY:
+			request = "%s %s %s" % (self.DESCRIBE_STR, self.fileName, self.RTSP_VER)
+			request+="\nCSeq: %d" % self.rtspSeq
+			request+="\nSession: %d" % self.sessionId
+			request+="\nFrameNum: %d" %  value
 		else:
 			return
 		
@@ -298,6 +324,11 @@ class Client:
 			if self.requestSent == self.TEARDOWN:
 				self.rtspSocket.shutdown(socket.SHUT_RDWR)
 				self.rtspSocket.close()
+				self.totalReceivedFrame -= (self.totalFrame - self.frameNbr)
+				packLostRate = float(self.numLostFrame)/float(self.totalReceivedFrame)
+				print ("RTP packet loss rate: ", packLostRate, "%")
+				videoDataRate = float(self.totalReceivedData) / ((self.totalReceivedFrame - self.numLostFrame) / self.fps)
+				print ("Video data rate", videoDataRate, " Bytes per second")
 				break
 
 	def parseRtspReply(self, data):
@@ -330,6 +361,7 @@ class Client:
 
 						#update Fps and total frame
 						self.totalFrame = int(lines[3])
+						self.totalReceivedFrame = self.totalFrame
 						self.fps = int(lines[4])
 						totalTime= int(self.totalFrame / self.fps)
 						self.total.configure(text=str(datetime.timedelta(seconds=totalTime)))
