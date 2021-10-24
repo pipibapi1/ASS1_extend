@@ -117,6 +117,7 @@ class ServerWorker:
 			except IOError:
 				self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
 			self.replyRtsp(self.OK_200, seq[1])
+
 	def sendRtp(self):
 		"""Send RTP packets over UDP."""
 		while True:
