@@ -379,6 +379,8 @@ class Client:
 						self.teardownAcked = 1
 					elif self.requestSent == self.PROCESS:
 						self.state = self.READY
+					
+					
 	def openRtpPort(self):
 		"""Open RTP socket binded to a specified port."""
 		#-------------
