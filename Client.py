@@ -16,11 +16,13 @@ class Client:
 	TEARDOWN_STR = 'TEARDOWN'
 	DESCRIBE_STR = 'DESCRIBE'
 	PROCESS_STR = 'PROCESS'
+	SWITCH_STR = 'SWITCH'
 
 	INIT = 0
 	READY = 1
 	PLAYING = 2
 	PROCESSING = 3
+	SWITCHING = 4
 	state = INIT
 
 	SETUP = 0
@@ -29,6 +31,7 @@ class Client:
 	TEARDOWN = 3
 	PROCESS = 4
 	DESCRIBE = 5
+	SWITCH= 6
 
 	RTSP_VER = "RTSP/1.0"
 	TRANSPORT = "RTP/UDP"
@@ -54,6 +57,7 @@ class Client:
 		self.numLostFrame = 0
 		self.totalReceivedData = 0
 		self.setupMovie()
+		self.nextVideo = 'movie.Mjpeg'
 
 	# Initiation
 	# THIS GUI IS JUST FOR REFERENCE ONLY, STUDENTS HAVE TO CREATE THEIR OWN GUI
@@ -109,6 +113,13 @@ class Client:
 		self.describe["command"] =  self.describeVideo
 		self.describe.grid(row=1, column=0, padx=2, pady=2)
 
+		#create switch button
+		self.switch = Button(self.master, width=20, padx=3, pady=3)
+		self.switch["text"] = "Next"
+		self.switch["command"] =  self.switchVideo
+		self.switch.grid(row=1, column=4, padx=2, pady=2)
+
+
 #PART1#
 #########################################################################################################################################
 	def setupMovie(self):
@@ -160,6 +171,22 @@ class Client:
 	def describeVideo(self):
 		self.sendRtspRequest(self.DESCRIBE)
 
+	def switchVideo(self):
+		if self.state == self.READY:
+			self.totalReceivedFrame -= (self.totalFrame - self.frameNbr)
+			packLostRate = float(self.numLostFrame)/float(self.totalReceivedFrame)
+			print ("RTP packet loss rate: ", packLostRate, "%")
+			videoDataRate = float(self.totalReceivedData) / ((self.totalReceivedFrame - self.numLostFrame) / self.fps)
+			print ("Video data rate", videoDataRate, " Bytes per second")
+
+			self.scale.set(0)
+			self.frameNbr = 0
+			self.fileName = self.nextVideo
+			self.totalReceivedData = 0
+			self.numLostFrame = 0
+			self.total.configure(text=str(datetime.timedelta(seconds=0)))
+			self.requestSent = self.SWITCH
+			self.sendRtspRequest(self.SWITCH)
    #PART 2
 	#########################################################################################################################################
 
@@ -299,7 +326,14 @@ class Client:
 			request = "%s %s %s" % (self.DESCRIBE_STR, self.fileName, self.RTSP_VER)
 			request+="\nCSeq: %d" % self.rtspSeq
 			request+="\nSession: %d" % self.sessionId
-			request+="\nFrameNum: %d" %  value
+
+			self.requestSent = self.DESCRIBE
+
+		elif requestCode == self.SWITCH and self.state == self.READY:
+			request = "%s %s %s" % (self.SWITCH_STR, self.nextVideo, self.RTSP_VER)
+			request+="\nCSeq: %d" % self.rtspSeq
+			request+="\nSession: %d" % self.sessionId
+			self.state = self.SWITCHING
 		else:
 			return
 		
@@ -326,7 +360,7 @@ class Client:
 				self.rtspSocket.close()
 				self.totalReceivedFrame -= (self.totalFrame - self.frameNbr)
 				packLostRate = float(self.numLostFrame)/float(self.totalReceivedFrame)
-				print ("RTP packet loss rate: ", packLostRate, "%")
+				print ("\nRTP packet loss rate: ", packLostRate, "%")
 				videoDataRate = float(self.totalReceivedData) / ((self.totalReceivedFrame - self.numLostFrame) / self.fps)
 				print ("Video data rate", videoDataRate, " Bytes per second")
 				break
@@ -380,6 +414,17 @@ class Client:
 					elif self.requestSent == self.PROCESS:
 						self.state = self.READY
 					
+					elif self.requestSent == self.DESCRIBE:
+						self.type = lines[3]
+						print(self.type)
+						self.state = self.READY
+					elif self.requestSent == self.SWITCH:
+						self.totalFrame = int(lines[3])
+						self.totalReceivedFrame = self.totalFrame
+						self.fps = int(lines[4])
+						totalTime= int(self.totalFrame / self.fps)
+						self.total.configure(text=str(datetime.timedelta(seconds=totalTime)))
+						self.state = self.READY
 					
 	def openRtpPort(self):
 		"""Open RTP socket binded to a specified port."""
