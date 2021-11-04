@@ -10,6 +10,8 @@ class ServerWorker:
 	PAUSE = 'PAUSE'
 	TEARDOWN = 'TEARDOWN'
 	PROCESS = 'PROCESS'
+	DESCRIBE = 'DESCRIBE'
+	SWITCH = 'SWITCH'
 	
 	INIT = 0
 	READY = 1
@@ -66,7 +68,7 @@ class ServerWorker:
 				self.clientInfo['session'] = randint(100000, 999999)
 				
 				# Send RTSP reply
-				self.replyRtsp(self.OK_200, seq[1])
+				self.replyRtsp(self.OK_200, seq[1], 'set')
 				
 				# Get the RTP/UDP port from the last line
 				self.clientInfo['rtpPort'] = request[2].split(' ')[3]
@@ -117,6 +119,18 @@ class ServerWorker:
 			except IOError:
 				self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
 			self.replyRtsp(self.OK_200, seq[1])
+		elif requestType == self.DESCRIBE:
+			print("processing DESCRIBE\n")
+			self.replyRtsp(self.OK_200, seq[1], 'describe')
+		
+		elif requestType == self.SWITCH:
+			print("processing SWITCH\n")
+			try:
+				self.state = self.READY
+				self.clientInfo['videoStream'] = VideoStream(filename)
+			except IOError:
+				self.replyRtsp(self.FILE_NOT_FOUND_404, seq[1])
+			self.replyRtsp(self.OK_200, seq[1], 'set')
 
 	def sendRtp(self):
 		"""Send RTP packets over UDP."""
@@ -157,13 +171,18 @@ class ServerWorker:
 		
 		return rtpPacket.getPacket()
 		
-	def replyRtsp(self, code, seq):
+	def replyRtsp(self, code, seq, type='none'):
 		"""Send RTSP reply to the client."""
 		if code == self.OK_200:
 			#print("200 OK")
 			totalFrame = self.clientInfo['videoStream'].getTotalFrame()
 			fps = self.clientInfo['videoStream'].getFps()
-			reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session']) + '\n'+ str(totalFrame) + '\n'+ str(fps)
+			if type == 'none':
+				reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session'])
+			elif type == "set":
+				reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session']) + '\n'+ str(totalFrame) + '\n'+ str(fps)
+			elif type == 'describe':
+				reply = 'RTSP/1.0 200 OK\nCSeq: ' + seq + '\nSession: ' + str(self.clientInfo['session']) + '\nMjpeg(26)'
 			connSocket = self.clientInfo['rtspSocket'][0]
 			connSocket.send(reply.encode())
 		
